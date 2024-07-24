@@ -1,6 +1,6 @@
 Berikut adalah contoh README dalam format markdown yang menjelaskan fungsi dan fitur dari kode Anda untuk proyek Climate Change:
 
-```markdown
+
 # Climate Change Monitoring System
 
 Proyek ini adalah sistem pemantauan perubahan iklim menggunakan berbagai sensor yang terhubung ke Arduino. Sistem ini mengumpulkan data dari lingkungan sekitar dan mengirimkannya ke broker MQTT untuk analisis lebih lanjut.
@@ -91,7 +91,7 @@ Proyek ini dilisensikan di bawah MIT License. Silakan lihat file LICENSE untuk i
 
 ## Kontak
 
-Untuk pertanyaan lebih lanjut, silakan hubungi [email@example.com](mailto:email@example.com).
+Untuk pertanyaan lebih lanjut, silakan hubungi [tiyoavianto@gmail.com](mailto:tiyoavianto@gmail.com).
 ```
 
 README ini menjelaskan fungsi dan fitur dari kode tanpa melampirkan kode itu sendiri. Ini akan membantu pengguna memahami tujuan dan cara kerja sistem pemantauan perubahan iklim Anda.

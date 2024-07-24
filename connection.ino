@@ -1,7 +1,9 @@
+#include <Wire.h>
+#include <Adafruit_INA219.h>
+#include <LiquidCrystal_I2C.h>
 #include <Ethernet.h>
 #include <NTPClient.h>
 #include <EthernetUdp.h>
-#include <LiquidCrystal_I2C.h>
 #include <TimeLib.h>
 #include <ArduinoJson.h>
 #include "dht21.h"
@@ -19,12 +21,22 @@
 // Inisialisasi objek LCD
 LiquidCrystal_I2C lcd(I2C_ADDR, LCD_COLS, LCD_ROWS);
 
+// Inisialisasi sensor INA219
+Adafruit_INA219 ina219;
+
 // Pengaturan MAC Address untuk modul W5100
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
 // Pengaturan NTP
 EthernetUDP udp;
 NTPClient timeClient(udp, "pool.ntp.org", 25200, 60000);
+
+// Konstanta untuk resistor divider
+const float R1 = 30.0;   // Nilai resistor R1 dalam kΩ
+const float R2 = 7.5;    // Nilai resistor R2 dalam kΩ
+
+// Luas panel surya dalam meter persegi
+const float luasPanel = 0.26 * 0.35;  // Meter persegi
 
 // Variabel untuk melacak hari sebelumnya
 int previousDay = -1;
@@ -55,6 +67,12 @@ void setup() {
     setupMQTT();
     setupFlowRateSensor();
     setupCCS811();
+
+    // Inisialisasi sensor INA219
+    if (!ina219.begin()) {
+        Serial.println("Failed to find INA219 chip");
+        while (1) { delay(10); }
+    }
 }
 
 void loop() {
@@ -91,6 +109,14 @@ void loop() {
             Serial.println("Gagal membaca dari sensor CCS811");
         }
 
+        // Baca data dari INA219
+        float busVoltage = ina219.getBusVoltage_V();
+        float current_mA = ina219.getCurrent_mA();
+        float power_mW = busVoltage * current_mA;
+        float voltage_solar_panel = analogRead(A0) * 5.0 / 1023.0; // Baca nilai ADC dan konversi ke tegangan
+        float power_watt = voltage_solar_panel * voltage_solar_panel / (R2 / (R1 + R2));
+        float irradiance = power_watt / luasPanel;
+
         String dateTimeString = getDateTimeString(epochTime);
         Serial.print("Kelembaban: ");
         Serial.print(h);
@@ -114,9 +140,12 @@ void loop() {
         }
         Serial.print("Waktu: ");
         Serial.println(dateTimeString);
+        
+        Serial.print("Irradiance:        "); Serial.print(irradiance); Serial.println(" W/m^2");
+        Serial.print("Power (Calculated): "); Serial.print(power_watt); Serial.println(" W");
 
-        String payload = createJsonPayload(h, t, flowRate, totalVolume, eco2, tvoc, dateTimeString);
-        publishMQTT("sensor/data", payload.c_str());
+        String payload = createJsonPayload(h, t, flowRate, totalVolume, eco2, tvoc, dateTimeString, irradiance, power_watt);
+        publishMQTT("sensor_data", payload.c_str());
 
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -139,15 +168,17 @@ String getDateTimeString(unsigned long epochTime) {
     return String(buffer);
 }
 
-String createJsonPayload(float h, float t, float flowRate, float totalVolume, float eco2, float tvoc, const String& dateTimeString) {
-    DynamicJsonDocument doc(1024);
-    doc["humidity"] = h;
-    doc["temperature"] = t;
+String createJsonPayload(float h, float t, float flowRate, float totalVolume, float eco2, float tvoc, const String& dateTimeString, float irradiance, float power_watt) {
+    DynamicJsonDocument doc(2048); // Pastikan cukup besar untuk menyimpan data
+    doc["hum"] = h;
+    doc["temp"] = t;
     doc["flowRate"] = flowRate;
     doc["totalVolume"] = totalVolume;
     doc["eco2"] = eco2;
     doc["tvoc"] = tvoc;
-    doc["timestamp"] = dateTimeString;
+    doc["updated_at"] = dateTimeString;
+    doc["irradiance"] = irradiance;
+    doc["power_irr"] = power_watt;
     String output;
     serializeJson(doc, output);
     return output;

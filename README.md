@@ -1,4 +1,4 @@
-Berikut adalah contoh README dalam format markdown yang menjelaskan fungsi dan fitur dari kode Anda untuk proyek Climate Change:
+
 
 
 # Climate Change Monitoring System
@@ -92,6 +92,3 @@ Proyek ini dilisensikan di bawah MIT License. Silakan lihat file LICENSE untuk i
 ## Kontak
 
 Untuk pertanyaan lebih lanjut, silakan hubungi [tiyoavianto@gmail.com](mailto:tiyoavianto@gmail.com).
-```
-
-README ini menjelaskan fungsi dan fitur dari kode tanpa melampirkan kode itu sendiri. Ini akan membantu pengguna memahami tujuan dan cara kerja sistem pemantauan perubahan iklim Anda.

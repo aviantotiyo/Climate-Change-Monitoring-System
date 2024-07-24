@@ -15,7 +15,13 @@ void flowPulseCounter() {
 }
 
 void calculateFlowRate() {
-    flowRate = (flowPulseCount / 7.5);
-    totalVolume += (flowRate / 60.0);
+    // Menghitung flow rate dalam L/min
+    flowRate = (flowPulseCount / 4.5);  // 4.5 pulsa per liter, sesuaikan jika diperlukan
+    
+    // Akumulasi total volume berdasarkan flow rate
+    totalVolume += (flowRate / 60.0);  // Volume dalam liter
+    
+    // Reset pulse count
     flowPulseCount = 0;
 }
+ 

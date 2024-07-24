@@ -10,11 +10,10 @@
 #include "ccs811.h"
 #include "flowrate.h"
 #include "ina219.h"
+#include <SimpleModbusMaster.h>
 
 // Alamat I2C LCD
 #define I2C_ADDR 0x3F
-
-// Ukuran LCD (jumlah kolom dan baris)
 #define LCD_COLS 16
 #define LCD_ROWS 2
 
@@ -39,6 +38,22 @@ int previousDay = -1;
 
 // Variabel untuk melacak waktu untuk pembaruan flow rate per menit
 unsigned long lastFlowUpdate = 0;
+
+// PZEM017 Modbus settings
+#define baud 9600
+#define timeout 1000
+#define polling 400 // the scan rate
+#define retry_count 50
+#define TxEnablePin 2
+#define TOTAL_NO_OF_REGISTERS 8
+
+enum {
+  PACKET1,
+  TOTAL_NO_OF_PACKETS // leave this last entry
+};
+
+Packet packets[TOTAL_NO_OF_PACKETS];
+unsigned int regs[TOTAL_NO_OF_REGISTERS];
 
 void setup() {
     Serial.begin(9600);
@@ -80,6 +95,11 @@ void setup() {
         lcd.print("INA219 Error");
         while (1) { delay(10); }
     }
+
+    // Configure Modbus for PZEM017
+    Serial1.begin(baud); // Start Serial1 for PZEM017
+    modbus_construct(&packets[PACKET1], 1, READ_INPUT_REGISTERS, 0, TOTAL_NO_OF_REGISTERS, 0);
+    modbus_configure(&Serial1, baud, SERIAL_8N2, timeout, polling, retry_count, TxEnablePin, packets, TOTAL_NO_OF_PACKETS, regs);
 }
 
 void loop() {
@@ -167,7 +187,27 @@ void loop() {
         Serial.print("current_mA: "); Serial.print(current_mA); Serial.println(" mA");
         Serial.print("power_mW: "); Serial.print(power_mW); Serial.println(" mW");
         Serial.print("v_solar_panel: "); Serial.print(voltage_solar_panel); Serial.println(" V");
-        
+
+        // PZEM017 Reading
+        modbus_update();
+        Serial.print("Voltage: ");
+        Serial.println(regs[0] / 100.0);
+        Serial.print("Current: ");
+        Serial.println(regs[1] / 1000.0);
+
+        unsigned long power = (regs[2] | (regs[3] << 16));
+        Serial.print("Power: ");
+        Serial.println(power / 10.0);
+
+        unsigned long energy = (regs[4] | (regs[5] << 16));
+        Serial.print("Energy: ");
+        Serial.println(energy);
+
+        Serial.print("High Voltage Alarm Status: ");
+        Serial.println(regs[6]);
+
+        Serial.print("Low Voltage Alarm Status: ");
+        Serial.println(regs[7]);
 
         String payload = createJsonPayload(h, t, flowminutes, totalVolume, eco2, tvoc, dateTimeString, irradiance, power_watt);
         publishMQTT("sensor_data", payload.c_str());
@@ -193,10 +233,10 @@ String getDateTimeString(unsigned long epochTime) {
     return String(buffer);
 }
 
-String createJsonPayload(float humidity, float temperature, float flowRate, float totalVolume, float eco2, float tvoc, const String& dateTime, float irradiance, float power_watt) {
-    StaticJsonDocument<256> doc;
-    doc["humidity"] = humidity;
-    doc["temperature"] = temperature;
+String createJsonPayload(float humidity, float temperature, float flowRate, float totalVolume, float eco2, float tvoc, String dateTime, float irradiance, float power_watt) {
+    DynamicJsonDocument doc(1024);
+    doc["hum"] = humidity;
+    doc["temp"] = temperature;
     doc["flowRate"] = flowRate;
     doc["totalVolume"] = totalVolume;
     doc["eco2"] = eco2;
@@ -204,8 +244,12 @@ String createJsonPayload(float humidity, float temperature, float flowRate, floa
     doc["updated_at"] = dateTime;
     doc["irradiance"] = irradiance;
     doc["power_irr"] = power_watt;
-    
-    String output;
-    serializeJson(doc, output);
-    return output;
+    doc["voltage"] = regs[0] / 100.0;  // Assuming regs[0] is in hundredths of a volt
+    doc["current"] = regs[1] / 1000.0;  // Assuming regs[1] is in milliamps
+    doc["power"] = (regs[2] | (regs[3] << 16)) / 10.0; // Assuming power is in tenths of a watt
+    doc["energy"] = (regs[4] | (regs[5] << 16));  // Energy is typically in watt-hours
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+    return jsonString;
 }

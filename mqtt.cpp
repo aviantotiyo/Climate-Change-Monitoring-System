@@ -31,7 +31,7 @@ void reconnectMQTT() {
             lcd.print("Gagal koneksi");
             lcd.setCursor(0, 1);
             lcd.print("Coba lagi...");
-            delay(5000);
+            delay(4000);
         }
     }
 }

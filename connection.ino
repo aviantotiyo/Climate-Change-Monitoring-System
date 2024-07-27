@@ -8,7 +8,6 @@
 #include "dht21.h"
 #include "mqtt.h"
 #include "ccs811.h"
-#include "flowrate.h"
 #include "ina219.h"
 #include <SimpleModbusMaster.h>
 
@@ -35,9 +34,6 @@ INA219Sensor ina219Sensor(30.0, 7.5, luasPanel);  // Gunakan nilai resistor yang
 
 // Variabel untuk melacak hari sebelumnya
 int previousDay = -1;
-
-// Variabel untuk melacak waktu untuk pembaruan flow rate per menit
-unsigned long lastFlowUpdate = 0;
 
 // PZEM017 Modbus settings
 #define baud 9600
@@ -84,7 +80,6 @@ void setup() {
 
     setupDHT21();
     setupMQTT();
-    setupFlowRateSensor();
     setupCCS811();
 
     // Inisialisasi sensor INA219
@@ -113,19 +108,10 @@ void loop() {
     int currentDay = day(epochTime);
 
     if (currentDay != previousDay) {
-        totalVolume = 0.0;
         previousDay = currentDay;
         lcd.clear();
         lcd.setCursor(0, 0);
         lcd.print("Reset Volume");
-    }
-
-    calculateFlowRate();
-
-    // Perbarui flowminutes setiap 1 menit
-    if (millis() - lastFlowUpdate >= 60000) {
-        updateFlowMinutes();
-        lastFlowUpdate = millis();
     }
 
     if (minute(epochTime) % 5 == 0 && second(epochTime) == 0) {
@@ -164,12 +150,6 @@ void loop() {
         Serial.print("Suhu: ");
         Serial.print(t);
         Serial.print(" *C\t");
-        Serial.print("Flow Rate: ");
-        Serial.print(flowminutes);
-        Serial.print(" L/min\t");
-        Serial.print("Total Volume: ");
-        Serial.print(totalVolume, 2);
-        Serial.print(" L\t");
         if (!isnan(eco2) && !isnan(tvoc)) {
             Serial.print("eCO2: ");
             Serial.print(eco2);
@@ -209,7 +189,7 @@ void loop() {
         Serial.print("Low Voltage Alarm Status: ");
         Serial.println(regs[7]);
 
-        String payload = createJsonPayload(h, t, flowminutes, totalVolume, eco2, tvoc, dateTimeString, irradiance, power_watt);
+        String payload = createJsonPayload(h, t, eco2, tvoc, dateTimeString, irradiance, power_watt);
         publishMQTT("sensor_data", payload.c_str());
 
         lcd.clear();
@@ -218,10 +198,6 @@ void loop() {
         lcd.print(t);
         lcd.print(" H: ");
         lcd.print(h);
-        lcd.setCursor(0, 1);
-        lcd.print("V: ");
-        lcd.print(totalVolume, 1);
-        lcd.print(" L");
 
         delay(1000);
     }
@@ -233,12 +209,10 @@ String getDateTimeString(unsigned long epochTime) {
     return String(buffer);
 }
 
-String createJsonPayload(float humidity, float temperature, float flowRate, float totalVolume, float eco2, float tvoc, String dateTime, float irradiance, float power_watt) {
+String createJsonPayload(float humidity, float temperature, float eco2, float tvoc, String dateTime, float irradiance, float power_watt) {
     DynamicJsonDocument doc(1024);
     doc["hum"] = humidity;
     doc["temp"] = temperature;
-    doc["flowRate"] = flowRate;
-    doc["totalVolume"] = totalVolume;
     doc["eco2"] = eco2;
     doc["tvoc"] = tvoc;
     doc["updated_at"] = dateTime;

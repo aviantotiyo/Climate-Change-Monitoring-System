@@ -3,13 +3,10 @@
 
 #include <DHT.h>
 
-// Pengaturan pin untuk sensor DHT21
-#define DHTPIN 2
-#define DHTTYPE DHT21
-extern DHT dht;
+#define DHTPIN 2      // Pin untuk DHT21
+#define DHTTYPE DHT21 // Tipe sensor DHT
 
 void setupDHT21();
-float readHumidity();
-float readTemperature();
+void readDHT21Data();
 
 #endif

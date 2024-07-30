@@ -2,11 +2,9 @@
 #define CCS811_H
 
 #include <Wire.h>
-#include <Adafruit_CCS811.h>
-
-extern Adafruit_CCS811 ccs;
+#include "Adafruit_CCS811.h"
 
 void setupCCS811();
-bool readCCS811(float& eco2, float& tvoc);
+void readCCS811Data();
 
 #endif

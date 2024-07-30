@@ -1,229 +1,151 @@
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
 #include <Ethernet.h>
+#include <PubSubClient.h>
+#include <Wire.h>
 #include <NTPClient.h>
 #include <EthernetUdp.h>
 #include <TimeLib.h>
-#include <ArduinoJson.h>
-#include "dht21.h"
-#include "mqtt.h"
+#include "pzem.h"
+#include "irradiance.h"
 #include "ccs811.h"
-#include "ina219.h"
-#include <SimpleModbusMaster.h>
+#include "dht21.h"
+#include <ArduinoJson.h>
 
-// Alamat I2C LCD
-#define I2C_ADDR 0x3F
-#define LCD_COLS 16
-#define LCD_ROWS 2
-
-// Inisialisasi objek LCD
-LiquidCrystal_I2C lcd(I2C_ADDR, LCD_COLS, LCD_ROWS);
-
-// Pengaturan MAC Address untuk modul W5100
+// Update these with values suitable for your network.
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+const char* mqtt_server = "192.168.1.14";
+const int mqtt_port = 1883;
+const char* mqtt_user = "admin";
+const char* mqtt_password = "admin";
 
-// Pengaturan NTP
-EthernetUDP udp;
-NTPClient timeClient(udp, "pool.ntp.org", 25200, 60000);
+EthernetClient ethClient;
+PubSubClient client(ethClient);
+EthernetUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 7 * 3600); // GMT+7
 
-// Luas panel surya dalam meter persegi
-const float luasPanel = 0.26 * 0.35;  // Meter persegi
+// Global variables to hold CCS811 data
+float co2 = 0;
+float tvoc = 0;
+// Global variables to hold dht21 data
+float humidity = 0;
+float temperature = 0;
+// Global variables to hold irradiance data
+float irradiance;
+float power_watt;
+// Global variables to hold PZEM data
+float voltage = 0;
+float current = 0;
+float power = 0;
+unsigned long energy = 0;
 
-// Inisialisasi sensor INA219
-INA219Sensor ina219Sensor(30.0, 7.5, luasPanel);  // Gunakan nilai resistor yang sama seperti sebelumnya
+// Time control 120000 (2menit) 300000 (5menit)
+unsigned long previousEpochTime = 0;
 
-// Variabel untuk melacak hari sebelumnya
-int previousDay = -1;
+void setupEthernet() {
+  // Start the Ethernet connection using DHCP
+  if (Ethernet.begin(mac) == 0) {
+    Serial.println("Failed to configure Ethernet using DHCP");
+    // No point in carrying on, so do nothing forevermore:
+    for(;;);
+  }
+  delay(1500); // Allow the hardware to sort itself out
+  Serial.print("My IP address: ");
+  Serial.println(Ethernet.localIP());
+}
 
-// PZEM017 Modbus settings
-#define baud 9600
-#define timeout 1000
-#define polling 400 // the scan rate
-#define retry_count 50
-#define TxEnablePin 2
-#define TOTAL_NO_OF_REGISTERS 8
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect("arduinoClient", mqtt_user, mqtt_password)) {
+      // Once connected, update the time
+      timeClient.update();
+      unsigned long epochTime = timeClient.getEpochTime();
+      setTime(epochTime);
 
-enum {
-  PACKET1,
-  TOTAL_NO_OF_PACKETS // leave this last entry
-};
-
-Packet packets[TOTAL_NO_OF_PACKETS];
-unsigned int regs[TOTAL_NO_OF_REGISTERS];
+      // Format the time in DATETIME format
+      char dateTime[20];
+      sprintf(dateTime, "%04d-%02d-%02d %02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
+      
+      Serial.print("connected - ");
+      Serial.println(dateTime);
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
 
 void setup() {
-    Serial.begin(9600);
+  Serial.begin(9600);
+  Wire.begin();  // Use default pins for SDA (20) and SCL (21) on Arduino Mega
 
-    // Inisialisasi LCD
-    lcd.begin(LCD_COLS, LCD_ROWS);
-    lcd.backlight();
-    lcd.setCursor(0, 0);
-    lcd.print("Starting...");
+  setupPZEM();
+  setupIrradiance();
+  setupCCS811();
+  setupDHT21();
 
-    SPI.begin();
-    if (Ethernet.begin(mac) == 0) {
-        Serial.println("Gagal mengkonfigurasi Ethernet menggunakan DHCP");
-        lcd.clear();
-        lcd.setCursor(0, 1);
-        lcd.print("Ethernet Error");
-        while (true);
-    }
+  setupEthernet();
+  client.setServer(mqtt_server, mqtt_port);
+  timeClient.begin();
 
-    Serial.print("Alamat IP Arduino: ");
-    Serial.println(Ethernet.localIP());
-    lcd.setCursor(0, 1);
-    lcd.print("IP: ");
-    lcd.print(Ethernet.localIP());
-
-    timeClient.begin();
-    timeClient.forceUpdate();
-
-    setupDHT21();
-    setupMQTT();
-    setupCCS811();
-
-    // Inisialisasi sensor INA219
-    if (!ina219Sensor.begin()) {
-        Serial.println("Failed to find INA219 chip");
-        lcd.clear();
-        lcd.setCursor(0, 1);
-        lcd.print("INA219 Error");
-        while (1) { delay(10); }
-    }
-
-    // Configure Modbus for PZEM017
-    Serial1.begin(baud); // Start Serial1 for PZEM017
-    modbus_construct(&packets[PACKET1], 1, READ_INPUT_REGISTERS, 0, TOTAL_NO_OF_REGISTERS, 0);
-    modbus_configure(&Serial1, baud, SERIAL_8N2, timeout, polling, retry_count, TxEnablePin, packets, TOTAL_NO_OF_PACKETS, regs);
+  // Connect to MQTT broker
+  reconnect();
 }
 
 void loop() {
-    if (!client.connected()) {
-        reconnectMQTT();
-    }
-    client.loop();
-    timeClient.update();
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
 
-    unsigned long epochTime = timeClient.getEpochTime();
-    int currentDay = day(epochTime);
+  // Get current time
+  timeClient.update();
+  unsigned long epochTime = timeClient.getEpochTime();
 
-    if (currentDay != previousDay) {
-        previousDay = currentDay;
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Reset Volume");
-    }
+  // Check if it's time to send data (120) : 2 menit, (300) = 5 menit)
+  if (epochTime % 300 == 0 && epochTime != previousEpochTime) {
+    previousEpochTime = epochTime;
 
-    if (minute(epochTime) % 5 == 0 && second(epochTime) == 0) {
-        float h = readHumidity();
-        float t = readTemperature();
-        if (isnan(h) || isnan(t)) {
-            Serial.println("Gagal membaca dari sensor DHT");
-            lcd.clear();
-            lcd.setCursor(0, 0);
-            lcd.print("DHT Error");
-            return;
-        }
+    // Read sensor data
+    readCCS811Data();
+    readDHT21Data();
+    calculateIrradiance();
+    readPZEMData();
 
-        float eco2 = NAN;
-        float tvoc = NAN;
-        if (readCCS811(eco2, tvoc)) {
-            Serial.println("Gagal membaca dari sensor CCS811");
-            lcd.clear();
-            lcd.setCursor(0, 0);
-            lcd.print("CCS811 Error");
-        }
+    // Format the time in DATETIME format
+    setTime(epochTime);
+    char dateTime[20];
+    sprintf(dateTime, "%04d-%02d-%02d %02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
 
-        ina219Sensor.readValues();
-        
-        float busVoltage = ina219Sensor.getBusVoltage();
-        float current_mA = ina219Sensor.getCurrent_mA();
-        float power_mW = ina219Sensor.getPower_mW();
-        float voltage_solar_panel = ina219Sensor.getVoltageSolarPanel();
-        float power_watt = ina219Sensor.getPowerWatt();
-        float irradiance = ina219Sensor.getIrradiance();
-
-        String dateTimeString = getDateTimeString(epochTime);
-        Serial.print("Kelembaban: ");
-        Serial.print(h);
-        Serial.print(" %\t");
-        Serial.print("Suhu: ");
-        Serial.print(t);
-        Serial.print(" *C\t");
-        if (!isnan(eco2) && !isnan(tvoc)) {
-            Serial.print("eCO2: ");
-            Serial.print(eco2);
-            Serial.print(" ppm\t");
-            Serial.print("TVOC: ");
-            Serial.print(tvoc);
-            Serial.print(" ppb\t");
-        }
-        Serial.print("Waktu: ");
-        Serial.println(dateTimeString);
-        
-        Serial.print("Irradiance:        "); Serial.print(irradiance); Serial.println(" W/m^2");
-        Serial.print("Power (Calculated): "); Serial.print(power_watt); Serial.println(" W");
-        Serial.print("busVoltage: "); Serial.print(busVoltage); Serial.println(" V");
-        Serial.print("current_mA: "); Serial.print(current_mA); Serial.println(" mA");
-        Serial.print("power_mW: "); Serial.print(power_mW); Serial.println(" mW");
-        Serial.print("v_solar_panel: "); Serial.print(voltage_solar_panel); Serial.println(" V");
-
-        // PZEM017 Reading
-        modbus_update();
-        Serial.print("Voltage: ");
-        Serial.println(regs[0] / 100.0);
-        Serial.print("Current: ");
-        Serial.println(regs[1] / 1000.0);
-
-        unsigned long power = (regs[2] | (regs[3] << 16));
-        Serial.print("Power: ");
-        Serial.println(power / 10.0);
-
-        unsigned long energy = (regs[4] | (regs[5] << 16));
-        Serial.print("Energy: ");
-        Serial.println(energy);
-
-        Serial.print("High Voltage Alarm Status: ");
-        Serial.println(regs[6]);
-
-        Serial.print("Low Voltage Alarm Status: ");
-        Serial.println(regs[7]);
-
-        String payload = createJsonPayload(h, t, eco2, tvoc, dateTimeString, irradiance, power_watt);
-        publishMQTT("sensor_data", payload.c_str());
-
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("T: ");
-        lcd.print(t);
-        lcd.print(" H: ");
-        lcd.print(h);
-
-        delay(1000);
-    }
-}
-
-String getDateTimeString(unsigned long epochTime) {
-    char buffer[20];
-    sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d", year(epochTime), month(epochTime), day(epochTime), hour(epochTime), minute(epochTime), second(epochTime));
-    return String(buffer);
-}
-
-String createJsonPayload(float humidity, float temperature, float eco2, float tvoc, String dateTime, float irradiance, float power_watt) {
-    DynamicJsonDocument doc(1024);
+    // Create a JSON document
+    StaticJsonDocument<200> doc;
     doc["hum"] = humidity;
     doc["temp"] = temperature;
-    doc["eco2"] = eco2;
+    doc["eco2"] = co2;
     doc["tvoc"] = tvoc;
     doc["updated_at"] = dateTime;
     doc["irradiance"] = irradiance;
     doc["power_irr"] = power_watt;
-    doc["voltage"] = regs[0] / 100.0;  // Assuming regs[0] is in hundredths of a volt
-    doc["current"] = regs[1] / 1000.0;  // Assuming regs[1] is in milliamps
-    doc["power"] = (regs[2] | (regs[3] << 16)) / 10.0; // Assuming power is in tenths of a watt
-    doc["energy"] = (regs[4] | (regs[5] << 16));  // Energy is typically in watt-hours
+    doc["voltage"] = voltage;     
+    doc["current"] = current;     
+    doc["power"] = power;         
+    doc["energy"] = energy;       
+    
+    // Serialize JSON to a string
+    char jsonBuffer[256];
+    size_t n = serializeJson(doc, jsonBuffer);
 
-    String jsonString;
-    serializeJson(doc, jsonString);
-    return jsonString;
+    // Debugging: Print JSON data to Serial Monitor
+    Serial.print("JSON Data: ");
+    Serial.println(jsonBuffer);
+
+    // Publish JSON data to MQTT broker
+    client.publish("sensor_data", jsonBuffer, n);
+  }
+
+  delay(1000); // Small delay to avoid flooding the loop
 }

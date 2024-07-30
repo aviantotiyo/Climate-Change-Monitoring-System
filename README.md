@@ -1,5 +1,3 @@
-Berikut adalah file README untuk proyek "Climate Change Monitoring System" yang menjelaskan fungsi dan dampak dari kode yang digunakan:
-
 # Climate Change Monitoring System
 
 ## Overview

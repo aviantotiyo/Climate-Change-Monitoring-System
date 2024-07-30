@@ -1,94 +1,79 @@
-
-
+Berikut adalah file README untuk proyek "Climate Change Monitoring System" yang menjelaskan fungsi dan dampak dari kode yang digunakan:
 
 # Climate Change Monitoring System
 
-Proyek ini adalah sistem pemantauan perubahan iklim menggunakan berbagai sensor yang terhubung ke Arduino. Sistem ini mengumpulkan data dari lingkungan sekitar dan mengirimkannya ke broker MQTT untuk analisis lebih lanjut.
+## Overview
 
-## Struktur Direktori
+The Climate Change Monitoring System is designed to collect and transmit environmental data related to climate change. The system uses various sensors to measure parameters such as CO2 levels, temperature, humidity, irradiance, and energy consumption. The collected data is then sent to an MQTT broker for further analysis and visualization.
 
-```plaintext
-project/
-├── connection.ino
-├── dht21.h
-├── dht21.cpp
-├── mqtt.h
-├── mqtt.cpp
-├── ccs811.h
-├── ccs811.cpp
-├── flowrate.h
-├── flowrate.cpp
-└── libraries/
-    ├── DHT/
-    ├── Adafruit_CCS811/
-    ├── Ethernet/
-    ├── LiquidCrystal_I2C/
-    ├── PubSubClient/
-    ├── NTPClient/
-    ├── TimeLib/
-    └── ArduinoJson/
-```
+## Features
 
-## Fungsi dan Fitur
+1. **Environmental Data Collection**:
 
-### Pemantauan Suhu dan Kelembaban
+   - **CCS811 Sensor**: Measures CO2 levels and total volatile organic compounds (TVOCs).
+   - **DHT21 Sensor**: Measures temperature and humidity.
+   - **Irradiance Sensor**: Measures solar irradiance.
+   - **PZEM Sensor**: Measures electrical parameters such as voltage, current, power, and energy consumption.
 
-Menggunakan sensor DHT21, sistem ini mengukur suhu dan kelembaban udara. Data ini penting untuk memantau perubahan iklim karena suhu dan kelembaban yang ekstrem dapat menjadi indikator perubahan iklim.
+2. **Data Transmission**:
 
-### Pemantauan Kualitas Udara
+   - The system connects to an Ethernet network using DHCP.
+   - Data is published to an MQTT broker at regular intervals, ensuring that the information is available for real-time monitoring and historical analysis.
 
-Sensor CCS811 digunakan untuk mengukur konsentrasi eCO2 (carbon dioxide equivalent) dan TVOC (Total Volatile Organic Compounds) di udara. Data ini membantu dalam memantau kualitas udara dan dampak polusi udara terhadap perubahan iklim.
+3. **Time Synchronization**:
 
-### Pemantauan Aliran Air
+   - The system uses an NTP (Network Time Protocol) client to synchronize time with an NTP server. This ensures that data is timestamped accurately according to the current time.
 
-Sistem ini menggunakan sensor aliran air untuk mengukur laju aliran dan volume total air yang mengalir. Data ini penting untuk memantau penggunaan air dan mengidentifikasi potensi kelangkaan air akibat perubahan iklim.
+4. **Data Publishing**:
+   - The system sends data to the MQTT broker every 5 minutes. Each data packet includes the latest readings from all sensors and a timestamp indicating when the data was collected.
 
-### Pengiriman Data via MQTT
+## Components Used
 
-Data yang dikumpulkan dari berbagai sensor dikirim ke broker MQTT menggunakan koneksi Ethernet. Ini memungkinkan pengumpulan data secara real-time dan pemantauan jarak jauh.
+- **Arduino Board**: The microcontroller unit used to interface with the sensors and handle data processing.
+- **Ethernet Shield**: Provides network connectivity for the Arduino.
+- **Sensors**: CCS811, DHT21, irradiance sensor, and PZEM sensor.
+- **MQTT Broker**: A server that receives and stores data sent by the Arduino.
 
-### Tampilan Status di LCD
+## Functionality
 
-Sistem ini menggunakan layar LCD untuk menampilkan status koneksi ke broker MQTT dan pembacaan data sensor. Ini memberikan umpan balik langsung kepada pengguna mengenai status sistem.
+1. **Initialization**:
 
-## Library Dependencies
+   - Upon startup, the system initializes the Ethernet connection, connects to the MQTT broker, and synchronizes time using the NTP client.
 
-Proyek ini menggunakan beberapa pustaka Arduino untuk mengelola sensor dan koneksi jaringan, termasuk:
+2. **Data Collection**:
 
-- DHT
-- Adafruit_CCS811
-- Ethernet
-- LiquidCrystal_I2C
-- PubSubClient
-- NTPClient
-- TimeLib
-- ArduinoJson
+   - The system reads data from the connected sensors, which measure various environmental parameters.
 
-Pastikan semua pustaka ini telah terinstal di Arduino IDE sebelum mengupload kode ke perangkat Arduino.
+3. **Data Transmission**:
 
-## Cara Menggunakan
+   - Every 5 minutes, the system creates a JSON payload containing the latest sensor readings and the current timestamp.
+   - This JSON payload is published to the specified MQTT topic.
 
-1. **Setup Hardware:**
-   - Hubungkan sensor DHT21, CCS811, dan flow rate ke Arduino sesuai dengan pin yang telah ditentukan.
-   - Hubungkan Arduino ke jaringan Ethernet.
+4. **Error Handling**:
+   - The system includes error handling for Ethernet and MQTT connection issues, ensuring reliable operation.
 
-2. **Upload Kode:**
-   - Buka `connection.ino` di Arduino IDE.
-   - Pastikan semua file `.h` dan `.cpp` berada dalam satu folder proyek.
-   - Upload kode ke Arduino.
+## Impact
 
-3. **Monitor Data:**
-   - Nyalakan Arduino dan pantau output melalui monitor serial.
-   - Data sensor akan dikirim ke broker MQTT dan status koneksi akan ditampilkan di LCD.
+The Climate Change Monitoring System provides valuable data that can be used to analyze environmental changes over time. By continuously monitoring and transmitting data, the system supports efforts to understand and address climate change. The collected data can be used for:
 
-## Kontribusi
+- **Climate Research**: Providing insights into trends and patterns related to climate change.
+- **Energy Management**: Monitoring energy consumption and efficiency.
+- **Environmental Awareness**: Raising awareness about air quality, temperature, and other environmental factors.
 
-Silakan lakukan pull request atau buka issue untuk memberikan saran atau perbaikan pada proyek ini.
+## Usage
 
-## Lisensi
+To deploy and use the Climate Change Monitoring System:
 
-Proyek ini dilisensikan di bawah MIT License. Silakan lihat file LICENSE untuk informasi lebih lanjut.
+1. **Hardware Setup**:
 
-## Kontak
+   - Connect the sensors to the Arduino board according to their respective pin configurations.
+   - Attach the Ethernet shield to the Arduino board.
 
-Untuk pertanyaan lebih lanjut, silakan hubungi [tiyoavianto@gmail.com](mailto:tiyoavianto@gmail.com).
+2. **Software Configuration**:
+
+   - Update the MQTT server address, port, and credentials in the code.
+   - Ensure the NTP server settings are correctly configured.
+
+3. **Deployment**:
+   - Upload the code to the Arduino board using the Arduino IDE.
+   - Monitor the serial output to verify the system is functioning correctly and sending data to the MQTT broker.
